@@ -60,4 +60,7 @@ void loop() {
   // the BLE bus and yield with vTaskDelay (never blocking delay()).
   ble.loop();
   vTaskDelay(pdMS_TO_TICKS(50));
+  // ~60 % idle-current saving on ESP-class radios; see
+  // https://hackaday.com/2022/10/28/esp8266-web-server-saves-60-power-with-a-1-ms-delay/
+  delay(10);
 }
