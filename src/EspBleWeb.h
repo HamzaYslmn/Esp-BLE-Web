@@ -39,6 +39,7 @@
 #include <BLE2902.h>
 #include <freertos/FreeRTOS.h>
 #include <freertos/task.h>
+#include <freertos/semphr.h>
 #include <vector>
 #include <functional>
 
@@ -54,11 +55,26 @@ public:
   static constexpr const char* DEFAULT_SVC_UUID  = "4fafc201-1fb5-459e-8fcc-c5c9c331914b";
   static constexpr const char* DEFAULT_CHAR_UUID = "beb5483e-36e1-4688-b7f5-ea07361b26a8";
 
+  ~EspBleWeb() {
+    // MARK: cleanup — only meaningful in tests; in real sketches the
+    // EspBleWeb instance is global and lives forever.
+    for (auto* w : _widgets) delete w;
+    _widgets.clear();
+    if (_busMutex) { vSemaphoreDelete(_busMutex); _busMutex = nullptr; }
+  }
+
   /* ---------------- lifecycle ---------------- */
 
   void begin(const char* deviceName,
              const char* svcUuid  = DEFAULT_SVC_UUID,
              const char* charUuid = DEFAULT_CHAR_UUID) {
+    // MARK: recursive bus mutex — sendLine() is called from BLE host task
+    // (replies, ping) AND from the BleTimer task (1 Hz ticks). Without
+    // serialisation they race over _chr->setValue/notify and over the
+    // _widgets iteration in dispatch(). Recursive so dispatch() can call
+    // sendLine() while already holding the lock.
+    if (!_busMutex) _busMutex = xSemaphoreCreateRecursiveMutex();
+
     BLEDevice::init(deviceName);
     BLEDevice::setMTU(247);   // larger so catalog lines fit in one notification
 
@@ -107,7 +123,10 @@ public:
   /** Push a raw line (will append '\n'). Long payloads are chunked so
    *  they fit within the negotiated ATT MTU (data = MTU - 3 bytes). */
   void sendLine(const String& s) {
-    String out = s;
+    BusLock lock(_busMutex);                       // MARK: serialise BLE writes
+    String out;
+    out.reserve(s.length() + 1);                   // avoid the '+= "\n"' realloc
+    out = s;
     if (!out.endsWith("\n")) out += "\n";
     Serial.print(out);
     if (!_connected || !_chr) return;
@@ -116,15 +135,31 @@ public:
     size_t         len = out.length();
     int            mtu = BLEDevice::getMTU();
     size_t         max = (mtu > 3 ? (size_t)(mtu - 3) : 20);
+    bool           first = true;
     while (len) {
+      // MARK: yield between chunks so the BLE host task can drain its
+      // notify queue under bursty traffic (e.g. catalog rebroadcast).
+      if (!first) vTaskDelay(1);
       size_t n = len > max ? max : len;
       _chr->setValue((uint8_t*)p, n);
       _chr->notify();
       p += n; len -= n;
+      first = false;
     }
   }
 
 private:
+  // MARK: RAII guard for the recursive bus mutex.
+  struct BusLock {
+    SemaphoreHandle_t m;
+    explicit BusLock(SemaphoreHandle_t mutex) : m(mutex) {
+      if (m) xSemaphoreTakeRecursive(m, portMAX_DELAY);
+    }
+    ~BusLock() { if (m) xSemaphoreGiveRecursive(m); }
+    BusLock(const BusLock&) = delete;
+    BusLock& operator=(const BusLock&) = delete;
+  };
+
   /* ---------------- setup helpers ---------------- */
 
   void setupGatt(const char* svcUuid, const char* charUuid) {
@@ -184,12 +219,18 @@ private:
     _needsAdvertise = true;
   }
   void onWrite(BLECharacteristic* c) override {
-    String buf(c->getValue().c_str());
-    int start = 0;
-    for (int i = 0; i <= (int)buf.length(); i++) {
-      char ch = (i < (int)buf.length()) ? buf[i] : '\n';
+    // MARK: iterate std::string in place; one String allocation per
+    // *line* instead of two per character buffer.
+    std::string buf = c->getValue();
+    size_t start = 0;
+    for (size_t i = 0; i <= buf.size(); ++i) {
+      char ch = (i < buf.size()) ? buf[i] : '\n';
       if (ch == '\n' || ch == '\r') {
-        if (i > start) dispatch(buf.substring(start, i));
+        if (i > start) {
+          String line; line.reserve(i - start);
+          line.concat(buf.data() + start, i - start);
+          dispatch(line);
+        }
         start = i + 1;
       }
     }
@@ -198,6 +239,7 @@ private:
   /* ---------------- dispatch ---------------- */
 
   void dispatch(String line) {
+    BusLock lock(_busMutex);                       // MARK: serialise dispatch
     line.trim();
     if (!line.length()) return;
 
@@ -255,6 +297,7 @@ private:
   bool               _started        = false;
   volatile bool      _needsAdvertise = false;
   uint32_t           _advertiseAtMs  = 0;
+  SemaphoreHandle_t  _busMutex       = nullptr;   // MARK: serialises BLE bus access
 
   std::vector<BleWidget*> _widgets;
 };

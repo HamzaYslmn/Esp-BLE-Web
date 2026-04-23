@@ -38,13 +38,20 @@ public:
     _send     = send;
     _dispatch = dispatch;
     _sem      = xSemaphoreCreateBinary();
+    // MARK: protects the cross-thread pending fields below (BLE host
+    // task writes them in handle(), the timer task reads them in run()).
+    // _pendingOnComplete is a String (heap), so a memcpy / portMUX is
+    // not enough — a real mutex is required.
+    _pendingMutex = xSemaphoreCreateMutex();
     xTaskCreatePinnedToCore(&BleTimer::trampoline, "bleTimer",
                             3072, this, 1, &_task, APP_CPU_NUM);
   }
 
   bool handle(const String& action) override {
     if (action == "cancel") {
+      if (_pendingMutex) xSemaphoreTake(_pendingMutex, portMAX_DELAY);
       _cancelFlag = true;
+      if (_pendingMutex) xSemaphoreGive(_pendingMutex);
       if (_sem) xSemaphoreGive(_sem);
       return true;
     }
@@ -53,9 +60,12 @@ public:
     int p = rest.indexOf(':');
     uint32_t secs = (uint32_t)(p < 0 ? rest.toInt() : rest.substring(0, p).toInt());
     if (secs == 0) return false;
+
+    if (_pendingMutex) xSemaphoreTake(_pendingMutex, portMAX_DELAY);
     _pendingSecs       = secs;
     _pendingOnComplete = (p < 0) ? _onComplete : rest.substring(p + 1);
     _startFlag         = true;
+    if (_pendingMutex) xSemaphoreGive(_pendingMutex);
     if (_sem) xSemaphoreGive(_sem);
     return true;
   }
@@ -66,16 +76,30 @@ private:
   void run() {
     for (;;) {
       xSemaphoreTake(_sem, portMAX_DELAY);
-      if (!_startFlag) { _cancelFlag = false; continue; }
+
+      // MARK: snapshot pending fields under the lock so the timer task
+      // never observes a half-written String / partial start request.
+      bool     start  = false;
+      bool     cancel = false;
+      uint32_t secs   = 0;
+      String   onComplete;
+      if (_pendingMutex) xSemaphoreTake(_pendingMutex, portMAX_DELAY);
+      start  = _startFlag;
+      cancel = _cancelFlag;
       _startFlag  = false;
       _cancelFlag = false;
+      if (start) {
+        secs       = _pendingSecs;
+        onComplete = _pendingOnComplete;
+      }
+      if (_pendingMutex) xSemaphoreGive(_pendingMutex);
+
+      if (!start) continue;   // a stray cancel with no run in progress
 
       // MARK: absolute deadlines on the ESP32 high-resolution timer (µs, 64-bit).
       // esp_timer_get_time() is driven by hardware and keeps ticking regardless
       // of delay() / interrupt latency in user code, so the countdown stays
       // accurate and tick cadence never drifts.
-      uint32_t secs       = _pendingSecs;
-      String   onComplete = _pendingOnComplete;
       const int64_t startUs = esp_timer_get_time();
       const int64_t endUs   = startUs + (int64_t)secs * 1000000LL;
       int64_t       nextTickUs = startUs + 1000000LL;
@@ -86,10 +110,14 @@ private:
         int64_t waitUs = nextTickUs - now;
         if (waitUs < 0) waitUs = 0;
         TickType_t waitTicks = pdMS_TO_TICKS((uint32_t)((waitUs + 999) / 1000));
-        if (xSemaphoreTake(_sem, waitTicks) == pdTRUE && _cancelFlag) {
+        if (xSemaphoreTake(_sem, waitTicks) == pdTRUE) {
+          // Woke up early — check whether it was a cancel.
+          bool wasCancel = false;
+          if (_pendingMutex) xSemaphoreTake(_pendingMutex, portMAX_DELAY);
+          wasCancel = _cancelFlag;
           _cancelFlag = false;
-          cancelled   = true;
-          break;
+          if (_pendingMutex) xSemaphoreGive(_pendingMutex);
+          if (wasCancel) { cancelled = true; break; }
         }
         int64_t remainingUs = endUs - esp_timer_get_time();
         if (remainingUs > 0) {
@@ -115,6 +143,7 @@ private:
 
   TaskHandle_t      _task = nullptr;
   SemaphoreHandle_t _sem  = nullptr;
+  SemaphoreHandle_t _pendingMutex = nullptr;   // MARK: guards fields below
   volatile bool     _startFlag  = false;
   volatile bool     _cancelFlag = false;
   uint32_t          _pendingSecs = 0;
