@@ -33,5 +33,11 @@ public:
   virtual bool   hasState()  const                { return false; }
   virtual String stateLine() const                { return String(); }
 
+  // MARK: cooperative tick driven by EspBleWeb::loop(). Default no-op;
+  // BleTimer overrides this to advance its countdown without a task.
+  // `nowUs` comes from esp_timer_get_time() so the deadline stays
+  // accurate regardless of delay() or interrupt latency in user code.
+  virtual void   poll(int64_t /*nowUs*/) {}
+
   virtual void attach(SendFn /*send*/, DispatchFn /*dispatch*/) {}
 };

@@ -40,6 +40,7 @@
 #include <freertos/FreeRTOS.h>
 #include <freertos/task.h>
 #include <freertos/semphr.h>
+#include <esp_timer.h>
 #include <vector>
 #include <functional>
 
@@ -94,6 +95,17 @@ public:
     if (_needsAdvertise && (int32_t)(millis() - _advertiseAtMs) >= 0) {
       _needsAdvertise = false;
       if (_adv) _adv->start();
+    }
+
+    // MARK: cooperative widget tick. BleTimer's countdown lives here —
+    // no FreeRTOS task per timer (~3 KB stack saved each). esp_timer
+    // gives the deadline; this loop just polls. Run under the bus
+    // mutex so handle() (BLE host task) and poll() (this task) never
+    // touch a widget's fields concurrently.
+    {
+      BusLock lock(_busMutex);
+      int64_t nowUs = esp_timer_get_time();
+      for (auto* w : _widgets) w->poll(nowUs);
     }
   }
 

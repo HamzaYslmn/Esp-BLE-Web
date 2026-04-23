@@ -1,5 +1,7 @@
 /*
- * BleTimer - countdown widget with its own FreeRTOS task.
+ * BleTimer - cooperative countdown widget. No FreeRTOS task, no
+ * semaphores, no per-instance mutex — the countdown advances from
+ * EspBleWeb::loop() via the BleWidget::poll() hook.
  *
  *   ble.addTimer("timer1", "Auto-off", 20*60, "relay1:OFF");
  *
@@ -10,21 +12,27 @@
  *   <id>:<remaining_seconds>:Confirmed                    tick (every 1 s)
  *   <id>:0:Confirmed                                      tick (expired)
  *
+ * Timing source: esp_timer_get_time() — 64-bit µs hardware clock,
+ * unaffected by delay() in user code, immune to millis() rollover.
+ *
  * On expiry the dispatch hook re-enters the bus with `<onComplete>`,
  * so a timer can drive any other widget by id (e.g. "relay1:OFF").
+ *
+ * Concurrency: handle() runs in the BLE host task under EspBleWeb's
+ * recursive bus mutex; poll() runs in the main loop task also under
+ * the bus mutex (taken by EspBleWeb::loop). Therefore the fields
+ * below are always touched by exactly one task at a time — no extra
+ * locking needed inside this class.
  */
 #pragma once
 
 #include "BleWidget.h"
-#include <freertos/FreeRTOS.h>
-#include <freertos/task.h>
-#include <freertos/semphr.h>
-#include <esp_timer.h>   // MARK: RTC-backed 64-bit µs clock, immune to millis() rollover & delay()
+#include <esp_timer.h>
 
 class BleTimer : public BleWidget {
 public:
   BleTimer(const char* id, const char* label, uint32_t seconds, const char* onComplete)
-    : _id(id), _label(label), _seconds(seconds), _onComplete(onComplete) {}
+    : _id(id), _label(label), _onComplete(onComplete), _seconds(seconds) {}
 
   const String& id() const override { return _id; }
 
@@ -32,122 +40,64 @@ public:
     return "widget:" + _id + ":timer:" + _label + ":" + String(_seconds) + ":" + _onComplete;
   }
 
-  // Spawn the dedicated countdown task once the bus is ready.
   void attach(SendFn send, DispatchFn dispatch) override {
-    if (_task) return;
     _send     = send;
     _dispatch = dispatch;
-    _sem      = xSemaphoreCreateBinary();
-    // MARK: protects the cross-thread pending fields below (BLE host
-    // task writes them in handle(), the timer task reads them in run()).
-    // _pendingOnComplete is a String (heap), so a memcpy / portMUX is
-    // not enough — a real mutex is required.
-    _pendingMutex = xSemaphoreCreateMutex();
-    xTaskCreatePinnedToCore(&BleTimer::trampoline, "bleTimer",
-                            3072, this, 1, &_task, APP_CPU_NUM);
   }
 
   bool handle(const String& action) override {
-    if (action == "cancel") {
-      if (_pendingMutex) xSemaphoreTake(_pendingMutex, portMAX_DELAY);
-      _cancelFlag = true;
-      if (_pendingMutex) xSemaphoreGive(_pendingMutex);
-      if (_sem) xSemaphoreGive(_sem);
-      return true;
-    }
+    if (action == "cancel") { _running = false; return true; }
     if (!action.startsWith("start:")) return false;
-    String rest = action.substring(6);            // "<sec>" or "<sec>:<onComplete>"
+
+    String rest = action.substring(6);              // "<sec>" or "<sec>:<onComplete>"
     int p = rest.indexOf(':');
     uint32_t secs = (uint32_t)(p < 0 ? rest.toInt() : rest.substring(0, p).toInt());
     if (secs == 0) return false;
 
-    if (_pendingMutex) xSemaphoreTake(_pendingMutex, portMAX_DELAY);
-    _pendingSecs       = secs;
-    _pendingOnComplete = (p < 0) ? _onComplete : rest.substring(p + 1);
-    _startFlag         = true;
-    if (_pendingMutex) xSemaphoreGive(_pendingMutex);
-    if (_sem) xSemaphoreGive(_sem);
+    _activeOnComplete = (p < 0) ? _onComplete : rest.substring(p + 1);
+    int64_t nowUs     = esp_timer_get_time();
+    _endUs            = nowUs + (int64_t)secs * 1000000LL;
+    _nextTickUs       = nowUs + 1000000LL;
+    _running          = true;
     return true;
   }
 
-private:
-  static void trampoline(void* arg) { static_cast<BleTimer*>(arg)->run(); }
+  void poll(int64_t nowUs) override {
+    if (!_running) return;
 
-  void run() {
-    for (;;) {
-      xSemaphoreTake(_sem, portMAX_DELAY);
+    if (nowUs >= _endUs) {
+      // Expired — copy onComplete first because _dispatch() may re-enter
+      // and trigger a new start: that would overwrite _activeOnComplete.
+      String onc = _activeOnComplete;
+      _running = false;
+      if (_send)            _send(_id + ":0:Confirmed");
+      if (onc.length() && _dispatch) _dispatch(onc);
+      return;
+    }
 
-      // MARK: snapshot pending fields under the lock so the timer task
-      // never observes a half-written String / partial start request.
-      bool     start  = false;
-      bool     cancel = false;
-      uint32_t secs   = 0;
-      String   onComplete;
-      if (_pendingMutex) xSemaphoreTake(_pendingMutex, portMAX_DELAY);
-      start  = _startFlag;
-      cancel = _cancelFlag;
-      _startFlag  = false;
-      _cancelFlag = false;
-      if (start) {
-        secs       = _pendingSecs;
-        onComplete = _pendingOnComplete;
-      }
-      if (_pendingMutex) xSemaphoreGive(_pendingMutex);
-
-      if (!start) continue;   // a stray cancel with no run in progress
-
-      // MARK: absolute deadlines on the ESP32 high-resolution timer (µs, 64-bit).
-      // esp_timer_get_time() is driven by hardware and keeps ticking regardless
-      // of delay() / interrupt latency in user code, so the countdown stays
-      // accurate and tick cadence never drifts.
-      const int64_t startUs = esp_timer_get_time();
-      const int64_t endUs   = startUs + (int64_t)secs * 1000000LL;
-      int64_t       nextTickUs = startUs + 1000000LL;
-      bool          cancelled  = false;
-
-      while (esp_timer_get_time() < endUs) {
-        int64_t now    = esp_timer_get_time();
-        int64_t waitUs = nextTickUs - now;
-        if (waitUs < 0) waitUs = 0;
-        TickType_t waitTicks = pdMS_TO_TICKS((uint32_t)((waitUs + 999) / 1000));
-        if (xSemaphoreTake(_sem, waitTicks) == pdTRUE) {
-          // Woke up early — check whether it was a cancel.
-          bool wasCancel = false;
-          if (_pendingMutex) xSemaphoreTake(_pendingMutex, portMAX_DELAY);
-          wasCancel = _cancelFlag;
-          _cancelFlag = false;
-          if (_pendingMutex) xSemaphoreGive(_pendingMutex);
-          if (wasCancel) { cancelled = true; break; }
-        }
-        int64_t remainingUs = endUs - esp_timer_get_time();
-        if (remainingUs > 0) {
-          uint32_t remaining = (uint32_t)((remainingUs + 999999LL) / 1000000LL);
-          if (_send) _send(_id + ":" + String(remaining) + ":Confirmed");
-        }
-        // Absolute schedule (no drift accumulation); skip past missed ticks.
-        nextTickUs += 1000000LL;
-        int64_t catchUp = esp_timer_get_time();
-        if (nextTickUs <= catchUp) nextTickUs = catchUp + 1000000LL;
-      }
-
-      if (cancelled) continue;
-      if (_send) _send(_id + ":0:Confirmed");
-      if (onComplete.length() && _dispatch) _dispatch(onComplete);
+    if (nowUs >= _nextTickUs) {
+      int64_t remainingUs = _endUs - nowUs;
+      uint32_t remaining  = (uint32_t)((remainingUs + 999999LL) / 1000000LL);
+      if (_send) _send(_id + ":" + String(remaining) + ":Confirmed");
+      // Absolute schedule (zero drift); skip past any missed ticks.
+      _nextTickUs += 1000000LL;
+      if (_nextTickUs <= nowUs) _nextTickUs = nowUs + 1000000LL;
     }
   }
 
+private:
   String   _id;
   String   _label;
-  String   _onComplete;
-  uint32_t _seconds = 0;
+  String   _onComplete;          // default action fired on expiry
+  String   _activeOnComplete;    // override from current start command
+  uint32_t _seconds = 0;         // catalog-time default duration
 
-  TaskHandle_t      _task = nullptr;
-  SemaphoreHandle_t _sem  = nullptr;
-  SemaphoreHandle_t _pendingMutex = nullptr;   // MARK: guards fields below
-  volatile bool     _startFlag  = false;
-  volatile bool     _cancelFlag = false;
-  uint32_t          _pendingSecs = 0;
-  String            _pendingOnComplete;
-  SendFn            _send;
-  DispatchFn        _dispatch;
+  // Countdown state. Touched under EspBleWeb's bus mutex, never both
+  // at once from two tasks, so no extra synchronisation here.
+  int64_t _endUs      = 0;
+  int64_t _nextTickUs = 0;
+  bool    _running    = false;
+
+  SendFn     _send;
+  DispatchFn _dispatch;
 };
