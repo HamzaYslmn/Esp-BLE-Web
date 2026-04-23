@@ -4,6 +4,8 @@
 
 **Live PWA:** https://hamzayslmn.github.io/Esp-BLE-Web/
 
+![alt text](img/image-1.png)
+![alt text](img/image-2.png)
 ---
 
 ## Highlights
