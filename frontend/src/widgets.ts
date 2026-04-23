@@ -57,7 +57,7 @@ export function parseWidgetLine(line: string): WidgetSpec | null {
   return null;
 }
 
-/* ---------------- localStorage helpers (generic) ---------------- */
+// MARK: localStorage helpers (generic)
 
 function loadJson<T extends object>(key: string): T {
   try {
@@ -75,7 +75,7 @@ function removeKey(key: string): void {
   try { localStorage.removeItem(key); } catch { /* ignore */ }
 }
 
-/* ---------------- per-widget label overrides ---------------- */
+// MARK: per-widget label overrides
 
 const LABELS_KEY = 'esp32-ble:labels';
 const labelsKey  = (deviceName: string) => `${LABELS_KEY}:${deviceName}`;
@@ -85,7 +85,7 @@ export const loadLabels   = (deviceName: string): Labels => loadJson<Labels>(lab
 export const saveLabels   = (deviceName: string, labels: Labels): void => saveJson(labelsKey(deviceName), labels);
 export const forgetLabels = (deviceName: string): void => removeKey(labelsKey(deviceName));
 
-/* ---------------- per-timer duration overrides ---------------- */
+// MARK: per-timer duration overrides
 
 const TIMER_KEY = 'esp32-ble:timer-seconds';
 const timerKey  = (deviceName: string) => `${TIMER_KEY}:${deviceName}`;

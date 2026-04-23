@@ -13,7 +13,7 @@
 #include <EspBleWeb.h>
 
 #define DEVICE_NAME    "ESP32-BLE-Relay"
-#define ACTIVE_LEVEL   LOW          // relay defaults to active LOW for safety on power-up
+#define ACTIVE_LEVEL   LOW          // active-low relay (safe on power-up)
 
 #define RELAY1_PIN     26
 #define RELAY2_PIN     25
@@ -21,7 +21,7 @@
 
 EspBleWeb ble;
 
-/* ---------------- per-widget handlers ---------------- */
+// MARK: per-widget handlers
 
 void setRelay(uint8_t pin, bool on) {
   digitalWrite(pin, on ? ACTIVE_LEVEL : !ACTIVE_LEVEL);
@@ -31,7 +31,7 @@ void onRelay1(bool on)       { setRelay(RELAY1_PIN, on); }
 void onRelay2(bool on)       { setRelay(RELAY2_PIN, on); }
 void onBrightness(int value) { analogWrite(LED_PIN, value); }   // 0..255
 
-/* ---------------- Arduino lifecycle ---------------- */
+// MARK: Arduino lifecycle
 
 void setup() {
   Serial.begin(115200);
@@ -60,7 +60,4 @@ void loop() {
   // the BLE bus and yield with vTaskDelay (never blocking delay()).
   ble.loop();
   vTaskDelay(pdMS_TO_TICKS(50));
-  // ~60 % idle-current saving on ESP-class radios; see
-  // https://hackaday.com/2022/10/28/esp8266-web-server-saves-60-power-with-a-1-ms-delay/
-  delay(10);
 }

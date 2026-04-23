@@ -71,7 +71,7 @@ export function App() {
     setConn(c);
   };
 
-  // Silent reconnect on page load.
+  // MARK: silent reconnect on page load
   useEffect(() => {
     let cancelled = false;
     (async () => {
@@ -83,7 +83,6 @@ export function App() {
     return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
-
   useEffect(() => {
     const onVisible = async () => {
       if (document.visibilityState === 'visible' && conn && !wakeLockRef.current) {
@@ -113,14 +112,14 @@ export function App() {
     }
   };
 
+  // MARK: reconnect / connect handler (button click)
   const handleReconnect = async (id?: string) => {
     setError(null);
     await ensureNotificationPermission();
     try {
       // Try silent reconnect first; fall back to chooser when blocked.
       const silent = await tryReconnect(handleClosed, id);
-      const c = silent ?? await connect(handleClosed);
-      await adoptConnection(c);
+      const c = silent ?? await connect(handleClosed);      await adoptConnection(c);
       notify(APP_TITLE, `Connected to ${c.name}`);
     } catch (e) {
       setError((e as Error).message);

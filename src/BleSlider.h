@@ -14,6 +14,7 @@
 #pragma once
 
 #include "BleWidget.h"
+#include <algorithm>   // std::clamp
 
 class BleSlider : public BleWidget {
 public:
@@ -23,7 +24,7 @@ public:
             int minV, int maxV, int initial, Callback cb)
     : _id(id), _label(label),
       _minV(minV), _maxV(maxV),
-      _value(clampToRange(initial, minV, maxV)),
+      _value(std::clamp(initial, minV, maxV)),
       _cb(cb) {}
 
   const String& id() const override { return _id; }
@@ -42,18 +43,12 @@ public:
   bool handle(const String& action) override {
     if (!action.startsWith("set:")) return false;
     int v = action.substring(4).toInt();
-    _value = clampToRange(v, _minV, _maxV);
+    _value = std::clamp(v, _minV, _maxV);
     if (_cb) _cb(_value);
     return true;
   }
 
 private:
-  static int clampToRange(int v, int lo, int hi) {
-    if (v < lo) return lo;
-    if (v > hi) return hi;
-    return v;
-  }
-
   String   _id;
   String   _label;
   int      _minV;

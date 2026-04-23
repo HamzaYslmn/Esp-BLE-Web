@@ -2,14 +2,13 @@ import { useEffect, useRef } from 'react';
 // Provided by vite-plugin-pwa (registerType: 'autoUpdate'):
 import { useRegisterSW } from 'virtual:pwa-register/react';
 
-const RECHECK_INTERVAL_MS = 60 * 60 * 1000; // hourly
-
 /**
- * Silently auto-applies new app versions:
- *  - Service worker is registered (autoUpdate mode in vite.config.ts).
- *  - Periodically asks the browser to re-check for an updated SW.
- *  - When a new version is ready, applies it and reloads the page in the
- *    background. No UI is shown.
+ * Silently auto-applies new app versions.
+ *
+ * The browser already polls for service-worker updates in the
+ * background; we just nudge a re-check whenever the page becomes
+ * visible again, then auto-reload the page as soon as a fresh SW is
+ * ready. No user prompt, no visible UI.
  */
 export function PWAUpdater() {
   const regRef = useRef<ServiceWorkerRegistration | null>(null);
@@ -22,14 +21,13 @@ export function PWAUpdater() {
   });
 
   useEffect(() => {
-    const tick = () => regRef.current?.update().catch(() => {});
-    const id = setInterval(tick, RECHECK_INTERVAL_MS);
-    const onVis = () => { if (document.visibilityState === 'visible') tick(); };
-    document.addEventListener('visibilitychange', onVis);
-    return () => {
-      clearInterval(id);
-      document.removeEventListener('visibilitychange', onVis);
+    const onVis = () => {
+      if (document.visibilityState === 'visible') {
+        regRef.current?.update().catch(() => {});
+      }
     };
+    document.addEventListener('visibilitychange', onVis);
+    return () => document.removeEventListener('visibilitychange', onVis);
   }, []);
 
   useEffect(() => {

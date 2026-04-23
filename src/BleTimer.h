@@ -45,6 +45,7 @@ public:
     _dispatch = dispatch;
   }
 
+  // MARK: handle (start / cancel from bus)
   bool handle(const String& action) override {
     if (action == "cancel") { _running = false; return true; }
     if (!action.startsWith("start:")) return false;
@@ -62,12 +63,14 @@ public:
     return true;
   }
 
+  // MARK: poll (cooperative 1 Hz tick + expiry)
   void poll(int64_t nowUs) override {
     if (!_running) return;
 
     if (nowUs >= _endUs) {
-      // Expired — copy onComplete first because _dispatch() may re-enter
-      // and trigger a new start: that would overwrite _activeOnComplete.
+      // Expired — copy onComplete first because _dispatch() may
+      // re-enter and trigger a new start, which would overwrite
+      // _activeOnComplete underneath us.
       String onc = _activeOnComplete;
       _running = false;
       if (_send)            _send(_id + ":0:Confirmed");
@@ -86,6 +89,7 @@ public:
   }
 
 private:
+  // MARK: state
   String   _id;
   String   _label;
   String   _onComplete;          // default action fired on expiry

@@ -1,7 +1,8 @@
 // Global app state (Zustand).
 //
-// Connection lifecycle, the BLE-broadcast widget catalog, last-known
-// state for each device, and recent Denied indicators.
+// Holds the BLE connection handle, the broadcast widget catalog,
+// last-known state for every widget id, and the most recent Denied
+// reply (single-slot, so it cannot grow unbounded over uptime).
 import { create } from 'zustand';
 import {
   forgetAllDevices,
@@ -21,7 +22,9 @@ interface AppState {
   catalog:        WidgetSpec[];
   catalogReady:   boolean;
   deviceStates:   Record<string, string>;
-  deniedAt:       Record<string, number>;
+  // Last observed Denied reply. Single nullable slot (overwritten)
+  // instead of a Record so it cannot grow over long uptime.
+  denied:         { id: string; ts: number } | null;
   editing:        boolean;
 
   setConn:       (c: Connection | null) => void;
@@ -45,7 +48,7 @@ export const useApp = create<AppState>((set) => ({
   catalog:      [],
   catalogReady: false,
   deviceStates: {},
-  deniedAt:     {},
+  denied:       null,
   editing:      false,
 
   setConn:    (conn)    => set({ conn }),
@@ -67,14 +70,14 @@ export const useApp = create<AppState>((set) => ({
     set({ knownDevices: [] });
   },
 
-  clearStates:  () => set({ deviceStates: {}, deniedAt: {} }),
+  clearStates:  () => set({ deviceStates: {}, denied: null }),
   clearCatalog: () => set({ catalog: [], catalogReady: false, editing: false }),
 
   setEditing:    (b)   => set({ editing: b }),
   toggleEditing: ()    => set((s) => ({ editing: !s.editing })),
 
   applyLine: (line) => {
-    // Catalog lines.
+    // MARK: catalog lines
     if (line === 'widgets:end') {
       set({ catalogReady: true });
       return;
@@ -82,7 +85,7 @@ export const useApp = create<AppState>((set) => ({
     const w = parseWidgetLine(line);
     if (w) {
       set((s) => {
-        // Replace in place if id already known, else append.
+        // Replace in place if the id already exists, else append.
         const idx = s.catalog.findIndex(c => c.id === w.id);
         if (idx < 0) return { catalog: [...s.catalog, w] };
         const next = s.catalog.slice();
@@ -91,13 +94,13 @@ export const useApp = create<AppState>((set) => ({
       });
       return;
     }
-    // State / denied replies.
+    // MARK: state / denied replies
     const r = parseReply(line);
     if (!r) return;
     if (r.status === 'Confirmed') {
       set((s) => ({ deviceStates: { ...s.deviceStates, [r.device]: r.action } }));
     } else {
-      set((s) => ({ deniedAt: { ...s.deniedAt, [r.device]: Date.now() } }));
+      set({ denied: { id: r.device, ts: Date.now() } });
     }
   },
 }));

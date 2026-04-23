@@ -7,9 +7,12 @@ interface Props {
   send:    (cmd: string) => Promise<void>;
 }
 
-/** Briefly highlights when a Denied reply is observed for `device`. */
+/** Briefly highlights a card when a Denied reply is observed for `device`. */
 function useDenied(device: string): boolean {
-  const ts = useApp((s) => s.deniedAt[device]);
+  // Subscribe only to the timestamp of the last denied reply for THIS
+  // device (undefined if it wasn't us) so unrelated denies don't
+  // re-render every card on the board.
+  const ts = useApp((s) => (s.denied?.id === device ? s.denied.ts : undefined));
   const [hi, setHi] = useState(false);
   useEffect(() => {
     if (!ts) return;
@@ -79,20 +82,21 @@ function SliderCard({ spec, send }: Props) {
   const max      = spec.max     ?? 100;
   const initial  = spec.initial ?? min;
 
-  // Server-confirmed value (parsed from "<id>:set:<n>" reply).
+  // Server-confirmed value, parsed from the "<id>:set:<n>" reply line.
   const confirmed =
     typeof state === 'string' && state.startsWith('set:')
       ? Number(state.slice(4))
       : initial;
 
-  // Local optimistic value while the user is dragging.
+  // Local optimistic value while the user is dragging, so the UI
+  // never feels laggy even on slow BLE links.
   const [local, setLocal] = useState<number>(confirmed);
   const dragging = useRef(false);
   useEffect(() => { if (!dragging.current) setLocal(confirmed); }, [confirmed]);
 
-  // 500 ms trailing debounce: send only after the slider has been
-  // still for half a second, so the BLE bus isn't blocked while
-  // dragging.
+  // 500 ms trailing debounce: send the value only after the slider has
+  // been still for half a second, so the BLE bus isn't blocked by a
+  // flood of writes while the user drags.
   const debounceTimer = useRef<number | null>(null);
   const pending       = useRef<number | null>(null);
   function scheduleSend(v: number) {

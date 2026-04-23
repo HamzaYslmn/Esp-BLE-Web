@@ -25,7 +25,7 @@ export function Board({ deviceName, send }: Props) {
   const [timerSecs, setTimerSecs] = useState<TimerOverrides>(() => loadTimerOverrides(deviceName));
   const [selected,  setSelected]  = useState<string | null>(null);
 
-  // Reload saved overrides when the connected device changes.
+  // Reload saved overrides whenever the connected device changes.
   useEffect(() => {
     setLabels(loadLabels(deviceName));
     setTimerSecs(loadTimerOverrides(deviceName));
@@ -66,7 +66,7 @@ export function Board({ deviceName, send }: Props) {
     );
   }
 
-  // Visible widget count (separators don't count).
+  // Visible widget count (separators don't count toward "how many widgets").
   const widgetCount = catalog.filter((w) => w.kind !== 'separator').length;
 
   return (

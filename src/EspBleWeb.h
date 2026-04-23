@@ -57,23 +57,21 @@ public:
   static constexpr const char* DEFAULT_CHAR_UUID = "beb5483e-36e1-4688-b7f5-ea07361b26a8";
 
   ~EspBleWeb() {
-    // MARK: cleanup — only meaningful in tests; in real sketches the
+    // Cleanup — only meaningful in tests; in real sketches the
     // EspBleWeb instance is global and lives forever.
     for (auto* w : _widgets) delete w;
     _widgets.clear();
     if (_busMutex) { vSemaphoreDelete(_busMutex); _busMutex = nullptr; }
   }
 
-  /* ---------------- lifecycle ---------------- */
+  // MARK: lifecycle
 
   void begin(const char* deviceName,
              const char* svcUuid  = DEFAULT_SVC_UUID,
              const char* charUuid = DEFAULT_CHAR_UUID) {
-    // MARK: recursive bus mutex — sendLine() is called from BLE host task
-    // (replies, ping) AND from the BleTimer task (1 Hz ticks). Without
-    // serialisation they race over _chr->setValue/notify and over the
-    // _widgets iteration in dispatch(). Recursive so dispatch() can call
-    // sendLine() while already holding the lock.
+    // Recursive bus mutex — sendLine() / dispatch() are entered from
+    // the BLE host task AND from the main loop task (poll). Recursive
+    // so dispatch() can call sendLine() while already holding it.
     if (!_busMutex) _busMutex = xSemaphoreCreateRecursiveMutex();
 
     BLEDevice::init(deviceName);
@@ -83,11 +81,9 @@ public:
     setupAdvertising(deviceName, svcUuid);
     _started = true;
 
-    // Hand each already-registered widget its send / dispatch hooks
-    // (timers spawn their FreeRTOS task here). Widgets registered
-    // *after* begin() are attached on the fly inside add().
+    // Hand each already-registered widget its send / dispatch hooks.
+    // Widgets registered *after* begin() are attached on the fly inside add().
     for (auto* w : _widgets) attachWidget(w);
-
     Serial.printf("[BLE] Ready: %s (%u widgets)\n", deviceName, (unsigned)_widgets.size());
   }
 
@@ -97,8 +93,8 @@ public:
       if (_adv) _adv->start();
     }
 
-    // MARK: cooperative widget tick. BleTimer's countdown lives here —
-    // no FreeRTOS task per timer (~3 KB stack saved each). esp_timer
+    // Cooperative widget tick — BleTimer's countdown lives here, no
+    // FreeRTOS task per timer (~3 KB stack saved each). esp_timer
     // gives the deadline; this loop just polls. Run under the bus
     // mutex so handle() (BLE host task) and poll() (this task) never
     // touch a widget's fields concurrently.
@@ -109,7 +105,7 @@ public:
     }
   }
 
-  /* ---------------- widget registration (factory helpers) ---------------- */
+  // MARK: widget registration (factory helpers)
 
   void addSwitch(const char* id, const char* label,
                  BleSwitch::Callback cb, bool initial = false) {
@@ -130,12 +126,12 @@ public:
     add(new BleSeparator(id, label));
   }
 
-  /* ---------------- output ---------------- */
+  // MARK: output (sendLine)
 
   /** Push a raw line (will append '\n'). Long payloads are chunked so
    *  they fit within the negotiated ATT MTU (data = MTU - 3 bytes). */
   void sendLine(const String& s) {
-    BusLock lock(_busMutex);                       // MARK: serialise BLE writes
+    BusLock lock(_busMutex);                       // serialise BLE writes
     String out;
     out.reserve(s.length() + 1);                   // avoid the '+= "\n"' realloc
     out = s;
@@ -149,8 +145,8 @@ public:
     size_t         max = (mtu > 3 ? (size_t)(mtu - 3) : 20);
     bool           first = true;
     while (len) {
-      // MARK: yield between chunks so the BLE host task can drain its
-      // notify queue under bursty traffic (e.g. catalog rebroadcast).
+      // Yield between chunks so the BLE host task can drain its notify
+      // queue under bursty traffic (e.g. catalog rebroadcast).
       if (!first) vTaskDelay(1);
       size_t n = len > max ? max : len;
       _chr->setValue((uint8_t*)p, n);
@@ -161,7 +157,7 @@ public:
   }
 
 private:
-  // MARK: RAII guard for the recursive bus mutex.
+  // RAII guard for the recursive bus mutex.
   struct BusLock {
     SemaphoreHandle_t m;
     explicit BusLock(SemaphoreHandle_t mutex) : m(mutex) {
@@ -172,7 +168,7 @@ private:
     BusLock& operator=(const BusLock&) = delete;
   };
 
-  /* ---------------- setup helpers ---------------- */
+  // MARK: setup helpers
 
   void setupGatt(const char* svcUuid, const char* charUuid) {
     BLEServer*  srv = BLEDevice::createServer();
@@ -214,7 +210,7 @@ private:
               [this](const String& s){ this->dispatch(s); });
   }
 
-  /* ---------------- BLE callbacks ---------------- */
+  // MARK: BLE callbacks (server + characteristic)
 
   void onConnect(BLEServer*, esp_ble_gatts_cb_param_t* p) override {
     _connected = true;
@@ -231,8 +227,8 @@ private:
     _needsAdvertise = true;
   }
   void onWrite(BLECharacteristic* c) override {
-    // MARK: iterate std::string in place; one String allocation per
-    // *line* instead of two per character buffer.
+    // Iterate std::string in place; one String allocation per *line*
+    // instead of two per character buffer.
     std::string buf = c->getValue();
     size_t start = 0;
     for (size_t i = 0; i <= buf.size(); ++i) {
@@ -248,10 +244,10 @@ private:
     }
   }
 
-  /* ---------------- dispatch ---------------- */
+  // MARK: dispatch (route incoming lines to widgets / built-ins)
 
   void dispatch(String line) {
-    BusLock lock(_busMutex);                       // MARK: serialise dispatch
+    BusLock lock(_busMutex);                       // serialise dispatch
     line.trim();
     if (!line.length()) return;
 
@@ -263,6 +259,7 @@ private:
     String device = line.substring(0, colon);
     String action = line.substring(colon + 1);
 
+    // MARK: ping (catalog + state rebroadcast)
     if (device == "system" && action == "ping") {
       broadcastCatalog();
       broadcastStates();
@@ -291,7 +288,7 @@ private:
     sendLine(device + ":" + action + (ok ? ":Confirmed" : ":Denied"));
   }
 
-  /* ---------------- catalog / state broadcast ---------------- */
+  // MARK: catalog / state broadcast
 
   void broadcastCatalog() {
     for (auto* w : _widgets) sendLine(w->catalogLine());
@@ -301,7 +298,7 @@ private:
     for (auto* w : _widgets) if (w->hasState()) sendLine(w->stateLine());
   }
 
-  /* ---------------- state ---------------- */
+  // MARK: state
 
   BLECharacteristic* _chr            = nullptr;
   BLEAdvertising*    _adv            = nullptr;
@@ -309,7 +306,7 @@ private:
   bool               _started        = false;
   volatile bool      _needsAdvertise = false;
   uint32_t           _advertiseAtMs  = 0;
-  SemaphoreHandle_t  _busMutex       = nullptr;   // MARK: serialises BLE bus access
+  SemaphoreHandle_t  _busMutex       = nullptr;
 
   std::vector<BleWidget*> _widgets;
 };

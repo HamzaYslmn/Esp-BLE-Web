@@ -8,7 +8,7 @@ interface BeforeInstallPromptEvent extends Event {
 function isStandalone(): boolean {
   return (
     window.matchMedia('(display-mode: standalone)').matches ||
-    // iOS Safari
+    // iOS Safari exposes this non-standard flag instead of matching the media query.
     (window.navigator as Navigator & { standalone?: boolean }).standalone === true
   );
 }
@@ -47,7 +47,7 @@ export function InstallButton() {
       setPrompt(null);
       return;
     }
-    // No native prompt available – show platform-specific hint.
+    // No native prompt available — show the platform-specific hint instead.
     setShowHint(true);
   };
 
