@@ -1,0 +1,1 @@
+{"root":["./src/app.tsx","./src/board.tsx","./src/installbutton.tsx","./src/pwaupdater.tsx","./src/settings.tsx","./src/widgetview.tsx","./src/ble.ts","./src/main.tsx","./src/store.ts","./src/vite-env.d.ts","./src/widgets.ts"],"version":"6.0.3"}
