@@ -42,8 +42,8 @@
 │   │   └── styles.css            Obsidian-style theme (Tailwind palette)
 │   ├── vite.config.ts            base: '/Esp-BLE-Web/' (GH Pages)
 │   └── package.json
-├── src/                            Esp32BleWeb Arduino library (header-only)
-│   ├── Esp32BleWeb.h               BLE server, widget registry, dispatcher
+├── src/                            EspBleWeb Arduino library (header-only)
+│   ├── EspBleWeb.h                 BLE server, widget registry, dispatcher
 │   ├── BleWidget.h                 Abstract base class for every widget
 │   ├── BleSwitch.h                 ON/OFF widget (callback)
 │   ├── BleButton.h                 Momentary press widget (callback)
@@ -116,7 +116,7 @@ widgets:end                                 # sentinel
 `examples/BasicRelay/BasicRelay.ino`:
 
 ```cpp
-#include <Esp32BleWeb.h>
+#include <EspBleWeb.h>
 
 #define DEVICE_NAME   "ESP32-BLE-Relay"
 #define ACTIVE_LEVEL  LOW           // active-LOW relay boards
@@ -125,7 +125,7 @@ widgets:end                                 # sentinel
 #define RELAY2_PIN    25
 #define LED_PIN       2
 
-Esp32BleWeb ble;
+EspBleWeb ble;
 
 void setRelay(uint8_t pin, bool on) {
   digitalWrite(pin, on ? ACTIVE_LEVEL : !ACTIVE_LEVEL);
@@ -182,7 +182,7 @@ ble.addSeparator(id);                                 // thin divider
 ble.addSeparator(id, "Section title");                // titled rule
 ```
 
-Every widget inherits from `BleWidget` (see `BleWidget.h`). The control class keeps a single `std::vector<BleWidget*>` and routes incoming commands by id — there is **no per-kind capacity limit**, no `MAX_SWITCHES`/`MAX_TIMERS` constants. Add a new widget kind by writing one header that inherits from `BleWidget` and a one-line factory in `Esp32BleWeb.h`.
+Every widget inherits from `BleWidget` (see `BleWidget.h`). The control class keeps a single `std::vector<BleWidget*>` and routes incoming commands by id — there is **no per-kind capacity limit**, no `MAX_SWITCHES`/`MAX_TIMERS` constants. Add a new widget kind by writing one header that inherits from `BleWidget` and a one-line factory in `EspBleWeb.h`.
 
 ### Limits
 
@@ -190,7 +190,7 @@ None. Widgets are stored in a `std::vector<BleWidget*>` and grow as you register
 
 ### Install & flash
 
-**Option A — Library Manager (once published):** search for `Esp32BleWeb` in *Arduino IDE → Library Manager* and install.
+**Option A — Library Manager (once published):** search for `EspBleWeb` in *Arduino IDE → Library Manager* and install.
 
 **Option B — Local install:** clone this repo into your sketchbook's `libraries/` folder, e.g.
 ```
@@ -198,7 +198,7 @@ None. Widgets are stored in a `std::vector<BleWidget*>` and grow as you register
 ```
 then restart the Arduino IDE.
 
-1. Open `examples/BasicRelay/BasicRelay.ino` (`File → Examples → Esp32BleWeb → BasicRelay` after install).
+1. Open `examples/BasicRelay/BasicRelay.ino` (`File → Examples → EspBleWeb → BasicRelay` after install).
 2. Make sure the **ESP32 boards package** is installed; pick your board + port.
 3. **Upload**, then open the Serial Monitor at 115200 to see `[BLE] Ready: ESP32-BLE-Relay`.
 

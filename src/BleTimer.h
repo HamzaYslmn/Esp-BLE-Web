@@ -19,6 +19,7 @@
 #include <freertos/FreeRTOS.h>
 #include <freertos/task.h>
 #include <freertos/semphr.h>
+#include <esp_timer.h>   // MARK: RTC-backed 64-bit µs clock, immune to millis() rollover & delay()
 
 class BleTimer : public BleWidget {
 public:
@@ -69,23 +70,36 @@ private:
       _startFlag  = false;
       _cancelFlag = false;
 
+      // MARK: absolute deadlines on the ESP32 high-resolution timer (µs, 64-bit).
+      // esp_timer_get_time() is driven by hardware and keeps ticking regardless
+      // of delay() / interrupt latency in user code, so the countdown stays
+      // accurate and tick cadence never drifts.
       uint32_t secs       = _pendingSecs;
       String   onComplete = _pendingOnComplete;
-      uint32_t endMs      = millis() + secs * 1000UL;
-      uint32_t nextTick   = millis() + 1000;
-      bool     cancelled  = false;
+      const int64_t startUs = esp_timer_get_time();
+      const int64_t endUs   = startUs + (int64_t)secs * 1000000LL;
+      int64_t       nextTickUs = startUs + 1000000LL;
+      bool          cancelled  = false;
 
-      while ((int32_t)(millis() - endMs) < 0) {
-        uint32_t now    = millis();
-        uint32_t waitMs = (nextTick > now) ? (nextTick - now) : 0;
-        if (xSemaphoreTake(_sem, pdMS_TO_TICKS(waitMs)) == pdTRUE && _cancelFlag) {
+      while (esp_timer_get_time() < endUs) {
+        int64_t now    = esp_timer_get_time();
+        int64_t waitUs = nextTickUs - now;
+        if (waitUs < 0) waitUs = 0;
+        TickType_t waitTicks = pdMS_TO_TICKS((uint32_t)((waitUs + 999) / 1000));
+        if (xSemaphoreTake(_sem, waitTicks) == pdTRUE && _cancelFlag) {
           _cancelFlag = false;
           cancelled   = true;
           break;
         }
-        uint32_t remaining = (endMs - millis() + 999) / 1000;
-        if (remaining > 0 && _send) _send(_id + ":" + String(remaining) + ":Confirmed");
-        nextTick = millis() + 1000;
+        int64_t remainingUs = endUs - esp_timer_get_time();
+        if (remainingUs > 0) {
+          uint32_t remaining = (uint32_t)((remainingUs + 999999LL) / 1000000LL);
+          if (_send) _send(_id + ":" + String(remaining) + ":Confirmed");
+        }
+        // Absolute schedule (no drift accumulation); skip past missed ticks.
+        nextTickUs += 1000000LL;
+        int64_t catchUp = esp_timer_get_time();
+        if (nextTickUs <= catchUp) nextTickUs = catchUp + 1000000LL;
       }
 
       if (cancelled) continue;
