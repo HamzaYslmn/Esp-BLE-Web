@@ -2,11 +2,11 @@ import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 import { VitePWA } from 'vite-plugin-pwa';
 
-// Deployed to GitHub Pages under https://<user>.github.io/Esp32-BLE-Control-Web/
-// so production assets and the PWA manifest must be rooted at /Esp32-BLE-Control-Web/.
+// Deployed to GitHub Pages under https://<user>.github.io/Esp-BLE-Web/
+// so production assets and the PWA manifest must be rooted at /Esp-BLE-Web/.
 // Local `pnpm dev` keeps the simple root-relative base.
 const BASE = process.env.NODE_ENV === 'production'
-  ? '/Esp32-BLE-Control-Web/'
+  ? '/Esp-BLE-Web/'
   : '/';
 
 export default defineConfig({

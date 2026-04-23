@@ -1,5 +1,7 @@
 /*
- * Esp32BleControl - minimal BLE command bus + widget catalog.
+ * EspBleWeb - minimal BLE command bus + widget catalog,
+ * paired with the Web Bluetooth PWA at
+ * https://github.com/HamzaYslmn/Esp-BLE-Web
  *
  * Wire protocol (one line per message, terminated by '\n'):
  *
@@ -40,14 +42,14 @@
 #include <vector>
 #include <functional>
 
-#include "Esp32BLEwidget.h"
-#include "Esp32BLEswitch.h"
-#include "Esp32BLEbutton.h"
-#include "Esp32BLEslider.h"
-#include "Esp32BLEtimer.h"
-#include "Esp32BLEseparator.h"
+#include "BleWidget.h"
+#include "BleSwitch.h"
+#include "BleButton.h"
+#include "BleSlider.h"
+#include "BleTimer.h"
+#include "BleSeparator.h"
 
-class Esp32BleControl : public BLEServerCallbacks, public BLECharacteristicCallbacks {
+class EspBleWeb : public BLEServerCallbacks, public BLECharacteristicCallbacks {
 public:
   static constexpr const char* DEFAULT_SVC_UUID  = "4fafc201-1fb5-459e-8fcc-c5c9c331914b";
   static constexpr const char* DEFAULT_CHAR_UUID = "beb5483e-36e1-4688-b7f5-ea07361b26a8";

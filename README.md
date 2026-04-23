@@ -2,7 +2,7 @@
 
 > Control an ESP32 from your phone or laptop over **Web Bluetooth** — no app store, no cloud, no Wi-Fi router. The PWA discovers the device's widgets at runtime, so adding a switch / slider / timer on the firmware automatically makes it appear in the UI.
 
-**Live PWA:** https://hamzayslmn.github.io/Esp32-BLE-Control-Web/
+**Live PWA:** https://hamzayslmn.github.io/Esp-BLE-Web/
 
 ---
 
@@ -40,19 +40,21 @@
 │   │   ├── ble.ts                Web Bluetooth wrapper, MTU 247
 │   │   ├── store.ts              Zustand global state
 │   │   └── styles.css            Obsidian-style theme (Tailwind palette)
-│   ├── vite.config.ts            base: '/Esp32-BLE-Control-Web/' (GH Pages)
+│   ├── vite.config.ts            base: '/Esp-BLE-Web/' (GH Pages)
 │   └── package.json
-├── src/main/                      Arduino sketch + portable BLE library
-│   ├── main.ino                  Demo: 2 relays + 1 dimmer + 1 timer
-│   └── libraries/Esp32BleControl/
-│       ├── Esp32BleControl.h     BLE server, widget registry, dispatcher
-│       ├── Esp32BLEwidget.h      Abstract base class for every widget
-│       ├── Esp32BLEswitch.h      ON/OFF widget (callback)
-│       ├── Esp32BLEbutton.h      Momentary press widget (callback)
-│       ├── Esp32BLEslider.h      Analog 1-D widget (callback)
-│       ├── Esp32BLEtimer.h       Self-running countdown widget (FreeRTOS task)
-│       └── Esp32BLEseparator.h   Visual section divider in the catalog
-├── .github/workflows/static.yml   Builds frontend/ and deploys to GH Pages
+├── src/                            Esp32BleWeb Arduino library (header-only)
+│   ├── Esp32BleWeb.h               BLE server, widget registry, dispatcher
+│   ├── BleWidget.h                 Abstract base class for every widget
+│   ├── BleSwitch.h                 ON/OFF widget (callback)
+│   ├── BleButton.h                 Momentary press widget (callback)
+│   ├── BleSlider.h                 Analog 1-D widget (callback)
+│   ├── BleTimer.h                  Self-running countdown widget (FreeRTOS task)
+│   └── BleSeparator.h              Visual section divider in the catalog
+├── examples/
+│   └── BasicRelay/BasicRelay.ino   Demo: 2 relays + 1 dimmer + 1 timer
+├── library.properties              Arduino Library Manager metadata
+├── keywords.txt                    Arduino IDE syntax highlighting
+├── .github/workflows/static.yml    Builds frontend/ and deploys to GH Pages
 └── LICENSE
 ```
 
@@ -111,10 +113,10 @@ widgets:end                                 # sentinel
 
 ## Firmware quick start
 
-`src/main/main.ino`:
+`examples/BasicRelay/BasicRelay.ino`:
 
 ```cpp
-#include "libraries/Esp32BleControl/Esp32BleControl.h"
+#include <Esp32BleWeb.h>
 
 #define DEVICE_NAME   "ESP32-BLE-Relay"
 #define ACTIVE_LEVEL  LOW           // active-LOW relay boards
@@ -123,7 +125,7 @@ widgets:end                                 # sentinel
 #define RELAY2_PIN    25
 #define LED_PIN       2
 
-Esp32BleControl ble;
+Esp32BleWeb ble;
 
 void setRelay(uint8_t pin, bool on) {
   digitalWrite(pin, on ? ACTIVE_LEVEL : !ACTIVE_LEVEL);
@@ -155,6 +157,7 @@ void setup() {
 void loop() {
   ble.loop();                       // serve advertising restarts
   vTaskDelay(pdMS_TO_TICKS(50));    // yield to BLE host + idle task
+  delay(10);                        // ESP idle-current saver, see Hackaday article
 }
 ```
 
@@ -179,7 +182,7 @@ ble.addSeparator(id);                                 // thin divider
 ble.addSeparator(id, "Section title");                // titled rule
 ```
 
-Every widget inherits from `BleWidget` (see `Esp32BLEwidget.h`). The control class keeps a single `std::vector<BleWidget*>` and routes incoming commands by id — there is **no per-kind capacity limit**, no `MAX_SWITCHES`/`MAX_TIMERS` constants. Add a new widget kind by writing one header that inherits from `BleWidget` and a one-line factory in `Esp32BleControl.h`.
+Every widget inherits from `BleWidget` (see `BleWidget.h`). The control class keeps a single `std::vector<BleWidget*>` and routes incoming commands by id — there is **no per-kind capacity limit**, no `MAX_SWITCHES`/`MAX_TIMERS` constants. Add a new widget kind by writing one header that inherits from `BleWidget` and a one-line factory in `Esp32BleWeb.h`.
 
 ### Limits
 
@@ -187,10 +190,17 @@ None. Widgets are stored in a `std::vector<BleWidget*>` and grow as you register
 
 ### Install & flash
 
-1. Open `src/main/main.ino` in the Arduino IDE (≥ 2.x) with the **ESP32 boards package** installed.
-2. The library lives next to the sketch under `libraries/Esp32BleControl/`; no global install needed.
-3. Select your ESP32 board, the right COM port, and **Upload**.
-4. Open the **Serial Monitor** at 115200 to see `[BLE] Ready: ESP32-BLE-Relay` and per-command logs.
+**Option A — Library Manager (once published):** search for `Esp32BleWeb` in *Arduino IDE → Library Manager* and install.
+
+**Option B — Local install:** clone this repo into your sketchbook's `libraries/` folder, e.g.
+```
+~/Documents/Arduino/libraries/Esp-BLE-Web/
+```
+then restart the Arduino IDE.
+
+1. Open `examples/BasicRelay/BasicRelay.ino` (`File → Examples → Esp32BleWeb → BasicRelay` after install).
+2. Make sure the **ESP32 boards package** is installed; pick your board + port.
+3. **Upload**, then open the Serial Monitor at 115200 to see `[BLE] Ready: ESP32-BLE-Relay`.
 
 ---
 
@@ -198,7 +208,7 @@ None. Widgets are stored in a `std::vector<BleWidget*>` and grow as you register
 
 ### Use the hosted version
 
-Just open https://hamzayslmn.github.io/Esp32-BLE-Control-Web/ in **Chrome / Edge / Opera** (Android, macOS, Windows, Linux). Tap **Connect**, pick `ESP32-BLE-Relay`, and the widgets appear automatically.
+Just open https://hamzayslmn.github.io/Esp-BLE-Web/ in **Chrome / Edge / Opera** (Android, macOS, Windows, Linux). Tap **Connect**, pick `ESP32-BLE-Relay`, and the widgets appear automatically.
 
 > Web Bluetooth requires HTTPS or `localhost`, and a Chromium-based browser. iOS Safari does not support Web Bluetooth (use the Bluefy browser as a workaround).
 
@@ -208,7 +218,7 @@ Just open https://hamzayslmn.github.io/Esp32-BLE-Control-Web/ in **Chrome / Edge
 cd frontend
 pnpm install
 pnpm dev          # http://localhost:5173 — Web Bluetooth works on localhost
-pnpm build        # production build into dist/, base = /Esp32-BLE-Control-Web/
+pnpm build        # production build into dist/, base = /Esp-BLE-Web/
 pnpm preview      # serves the built dist/
 ```
 
@@ -236,7 +246,7 @@ Open the site in Chrome / Edge → menu → *Install app* (or *Add to Home Scree
 The `.github/workflows/static.yml` workflow:
 
 1. Triggers on `push` to `main` **only when the commit message contains `release`**, or on manual dispatch.
-2. Installs pnpm + Node 20, then builds `frontend/` (`vite build` sets `NODE_ENV=production`, which switches `base` to `/Esp32-BLE-Control-Web/`).
+2. Installs pnpm + Node 20, then builds `frontend/` (`vite build` sets `NODE_ENV=production`, which switches `base` to `/Esp-BLE-Web/`).
 3. Uploads `frontend/dist/` and deploys it to the `github-pages` environment.
 
 To publish a new version:

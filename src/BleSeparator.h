@@ -5,7 +5,7 @@
  */
 #pragma once
 
-#include "Esp32BLEwidget.h"
+#include "BleWidget.h"
 
 class BleSeparator : public BleWidget {
 public:

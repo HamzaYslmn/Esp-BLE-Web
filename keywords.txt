@@ -1,0 +1,43 @@
+#######################################
+# Syntax Coloring Map for EspBleWeb
+#######################################
+
+#######################################
+# Datatypes (KEYWORD1)
+#######################################
+
+EspBleWeb	KEYWORD1
+BleWidget	KEYWORD1
+BleSwitch	KEYWORD1
+BleButton	KEYWORD1
+BleSlider	KEYWORD1
+BleTimer	KEYWORD1
+BleSeparator	KEYWORD1
+
+#######################################
+# Methods and Functions (KEYWORD2)
+#######################################
+
+begin	KEYWORD2
+loop	KEYWORD2
+sendLine	KEYWORD2
+addSwitch	KEYWORD2
+addButton	KEYWORD2
+addSlider	KEYWORD2
+addTimer	KEYWORD2
+addSeparator	KEYWORD2
+
+id	KEYWORD2
+catalogLine	KEYWORD2
+stateLine	KEYWORD2
+hasState	KEYWORD2
+handle	KEYWORD2
+attach	KEYWORD2
+value	KEYWORD2
+
+#######################################
+# Constants (LITERAL1)
+#######################################
+
+DEFAULT_SVC_UUID	LITERAL1
+DEFAULT_CHAR_UUID	LITERAL1

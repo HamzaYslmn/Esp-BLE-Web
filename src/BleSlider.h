@@ -13,7 +13,7 @@
  */
 #pragma once
 
-#include "Esp32BLEwidget.h"
+#include "BleWidget.h"
 
 class BleSlider : public BleWidget {
 public:

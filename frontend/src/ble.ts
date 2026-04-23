@@ -10,7 +10,7 @@
 // screen's "Reconnect to X" button; the full list powers Settings.
 //
 // Wire protocol is plain text, '\n' / '\r' / ';' separated. See the
-// Esp32BleControl library README for the message shape.
+// EspBleWeb library README for the message shape.
 export const SVC      = '4fafc201-1fb5-459e-8fcc-c5c9c331914b';
 export const CHAR_ID  = 'beb5483e-36e1-4688-b7f5-ea07361b26a8';
 export const ESP_NAME_PREFIX = 'ESP32-BLE';

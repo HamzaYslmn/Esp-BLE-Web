@@ -1,5 +1,5 @@
 /*
- * ESP32 BLE Relay - demo sketch using Esp32BleControl.
+ * ESP32 BLE Relay - demo sketch using EspBleWeb.
  *
  * Per-widget callbacks make the sketch self-contained: each widget
  * declares what it does inline. No global string-parsing handler.
@@ -10,7 +10,7 @@
  *   timer1   20-min auto-off for relay1
  */
 
-#include "libraries/Esp32BleControl/Esp32BleControl.h"
+#include "Esp32BleWeb.h"
 
 #define DEVICE_NAME    "ESP32-BLE-Relay"
 #define ACTIVE_LEVEL   LOW          // relay defaults to active LOW for safety on power-up
@@ -19,7 +19,7 @@
 #define RELAY2_PIN     25
 #define LED_PIN        2            // on-board LED for the dimmer demo
 
-Esp32BleControl ble;
+EspBleWeb ble;
 
 /* ---------------- per-widget handlers ---------------- */
 
@@ -60,5 +60,7 @@ void loop() {
   // the BLE bus and yield with vTaskDelay (never blocking delay()).
   ble.loop();
   vTaskDelay(pdMS_TO_TICKS(50));
-  delay(10);  // CPU Power Saver
+  // ~60 % idle-current saving on ESP-class radios; see
+  // https://hackaday.com/2022/10/28/esp8266-web-server-saves-60-power-with-a-1-ms-delay/
+  delay(10);
 }
