@@ -227,16 +227,17 @@ private:
     _needsAdvertise = true;
   }
   void onWrite(BLECharacteristic* c) override {
-    // Iterate std::string in place; one String allocation per *line*
-    // instead of two per character buffer.
-    std::string buf = c->getValue();
+    // Iterate the characteristic value in place; one String allocation
+    // per *line* instead of two per character buffer.
+    String buf = c->getValue();
+    const size_t n = buf.length();
     size_t start = 0;
-    for (size_t i = 0; i <= buf.size(); ++i) {
-      char ch = (i < buf.size()) ? buf[i] : '\n';
+    for (size_t i = 0; i <= n; ++i) {
+      char ch = (i < n) ? buf[i] : '\n';
       if (ch == '\n' || ch == '\r') {
         if (i > start) {
           String line; line.reserve(i - start);
-          line.concat(buf.data() + start, i - start);
+          line.concat(buf.c_str() + start, i - start);
           dispatch(line);
         }
         start = i + 1;
