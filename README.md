@@ -276,3 +276,4 @@ Or trigger manually from GitHub → *Actions* → *Deploy static content to Page
 ## License
 
 [MIT](LICENSE)
+
