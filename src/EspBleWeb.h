@@ -229,7 +229,7 @@ private:
   void onWrite(BLECharacteristic* c) override {
     // Iterate the characteristic value in place; one String allocation
     // per *line* instead of two per character buffer.
-    String buf = c->getValue();
+    String buf = c->getValue().c_str();
     const size_t n = buf.length();
     size_t start = 0;
     for (size_t i = 0; i <= n; ++i) {
