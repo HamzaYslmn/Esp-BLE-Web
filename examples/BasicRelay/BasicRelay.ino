@@ -52,7 +52,7 @@ void setup() {
   ble.addSlider   ("led", "Brightness", 0, 255, 0, onBrightness);
 
   ble.addSeparator("sec3", "Timers");
-  ble.addTimer    ("timer1", "Auto-off", 20 * 60, "relay1:OFF");
+  ble.addTimer    ("timer1", "Auto-off", 20 * 60, "relay1:TOGGLE");
 }
 
 void loop() {

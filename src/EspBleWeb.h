@@ -272,9 +272,11 @@ private:
     for (auto* w : _widgets) {
       if (w->id() == device) {
         bool ok = w->handle(action);
-        // Sliders echo their authoritative (clamped) value; everything
-        // else just gets the standard <id>:<action>:Confirmed reply.
-        if (ok && w->hasState() && action.startsWith("set:")) {
+        // Sliders echo their authoritative (clamped) value; switch
+        // TOGGLE echoes the resolved ON/OFF so the frontend learns
+        // the new state. Everything else gets the standard
+        // <id>:<action>:Confirmed reply.
+        if (ok && w->hasState() && (action.startsWith("set:") || action == "TOGGLE")) {
           sendLine(w->stateLine());
         } else {
           reply(device, action, ok);

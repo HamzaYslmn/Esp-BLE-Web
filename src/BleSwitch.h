@@ -5,7 +5,7 @@
  *
  * Wire protocol:
  *   widget:<id>:switch:<label>      catalog
- *   <id>:ON | <id>:OFF              write
+ *   <id>:ON | <id>:OFF | <id>:TOGGLE  write
  *   <id>:ON:Confirmed               reply / state
  */
 #pragma once
@@ -27,9 +27,10 @@ public:
   String stateLine()   const override { return _id + ":" + (_state ? "ON" : "OFF") + ":Confirmed"; }
 
   bool handle(const String& action) override {
-    if (action == "ON")       _state = true;
-    else if (action == "OFF") _state = false;
-    else                      return false;
+    if (action == "ON")          _state = true;
+    else if (action == "OFF")    _state = false;
+    else if (action == "TOGGLE") _state = !_state;
+    else                         return false;
     if (_cb) _cb(_state);
     return true;
   }
